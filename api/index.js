@@ -8,31 +8,31 @@ app.use(cors());
 
 const baseUrl = 'https://otakudesu.best';
 
-// HEADERS SUPER LENGKAP UNTUK BYPASS CLOUDFLARE/403
-const headers = { 
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Referer': 'https://otakudesu.best/',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'same-origin',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'max-age=0'
-};
-
-const getSafeText = ($, element, keyword) => {
-    const text = $(element).find(`p:contains("${keyword}")`).text();
-    if (!text) return "N/A";
-    const parts = text.split(':');
-    return parts.length > 1 ? parts.slice(1).join(':').trim() : text.trim();
-};
-
-app.get('/api/home', async (req, res) => {
+// Helper Anti-Blokir Vercel (Hanya bekerja jika Vercel diblokir 403)
+async function fetchWithBypass(targetUrl) {
     try {
-        const { data } = await axios.get(`${baseUrl}/ongoing-anime/`, { headers });
+        const { data } = await axios.get(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            timeout: 10000
+        });
+        return data;
+    } catch (error) {
+        if (error.response && error.response.status === 403) {
+            // Jika kena 403, kita tembus pakai proxy AllOrigins
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+            const { data } = await axios.get(proxyUrl, { timeout: 10000 });
+            return data;
+        }
+        throw error;
+    }
+}
+
+// ==========================================================
+// CLASS OTAKUDESU ASLI MILIKMU (DENGAN TAMBAHAN BYPASS 403)
+// ==========================================================
+class Otakudesu {
+    async home() {
+        const data = await fetchWithBypass(baseUrl);
         const $ = cheerio.load(data);
         const result = [];
         $('.venz ul li').each((i, el) => {
@@ -40,34 +40,31 @@ app.get('/api/home', async (req, res) => {
                 title: $(el).find('h2').text().trim(),
                 thumb: $(el).find('img').attr('src'),
                 episode: $(el).find('.epz').text().trim(),
+                uploadedOn: $(el).find('.newnime').text().trim(),
                 url: $(el).find('a').attr('href')
             });
         });
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({ error: 'Gagal mengambil data Home: ' + error.message });
+        return result;
     }
-});
 
-app.get('/api/detail', async (req, res) => {
-    try {
-        const { url } = req.query;
-        if (!url) return res.status(400).json({ error: 'URL anime tidak ditemukan' });
-
-        const { data } = await axios.get(url, { headers });
+    async detail(url) {
+        const data = await fetchWithBypass(url);
         const $ = cheerio.load(data);
         const info = $('.infozin .infozingle');
-        
         const detail = {
-            thumb: $('.fotoanime img').attr('src') || '',
-            title: getSafeText($, info, "Judul"),
-            score: getSafeText($, info, "Skor"),
-            status: getSafeText($, info, "Status"),
-            genre: getSafeText($, info, "Genre"),
-            sinopsis: $('.sinopc').text().trim() || 'Sinopsis belum tersedia.',
+            thumb: $('.fotoanime img').attr('src'),
+            title: info.find('p:contains("Judul")').text().split(':')[1]?.trim(),
+            score: info.find('p:contains("Skor")').text().split(':')[1]?.trim(),
+            producer: info.find('p:contains("Produser")').text().split(':')[1]?.trim(),
+            status: info.find('p:contains("Status")').text().split(':')[1]?.trim(),
+            totalEpisode: info.find('p:contains("Total Episode")').text().split(':')[1]?.trim(),
+            duration: info.find('p:contains("Durasi")').text().split(':')[1]?.trim(),
+            releaseDate: info.find('p:contains("Tanggal Rilis")').text().split(':')[1]?.trim(),
+            studio: info.find('p:contains("Studio")').text().split(':')[1]?.trim(),
+            genre: info.find('p:contains("Genre")').text().split(':')[1]?.trim(),
+            sinopsis: $('.sinopc').text().trim(),
             episodes: []
         };
-
         $('.episodelist ul li').each((i, el) => {
             detail.episodes.push({
                 title: $(el).find('a').text().trim(),
@@ -75,9 +72,52 @@ app.get('/api/detail', async (req, res) => {
                 date: $(el).find('.zeebr').text().trim()
             });
         });
-        
-        detail.episodes.reverse();
-        res.json(detail);
+        return detail;
+    }
+
+    async episode(url) {
+        const data = await fetchWithBypass(url);
+        const $ = cheerio.load(data);
+        const download = [];
+        $('.download ul li').each((i, el) => {
+            const resolusi = $(el).find('strong').text().trim();
+            const links = [];
+            $(el).find('a').each((j, link) => {
+                links.push({
+                    server: $(link).text().trim(),
+                    url: $(link).attr('href')
+                });
+            });
+            download.push({ resolusi, links });
+        });
+        return {
+            title: $('.venser h1').text().trim(),
+            videoUrl: $('#pembed iframe').attr('src'),
+            download
+        };
+    }
+}
+
+const otaku = new Otakudesu();
+
+// ==========================================================
+// ROUTING EXPRESS (Menghubungkan Frontend dengan Class milikmu)
+// ==========================================================
+
+app.get('/api/home', async (req, res) => {
+    try {
+        const data = await otaku.home();
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: 'Gagal mengambil Home: ' + error.message });
+    }
+});
+
+app.get('/api/detail', async (req, res) => {
+    try {
+        if (!req.query.url) throw new Error("URL dibutuhkan");
+        const data = await otaku.detail(req.query.url);
+        res.json(data);
     } catch (error) {
         res.status(500).json({ error: 'Gagal mengambil Detail: ' + error.message });
     }
@@ -85,20 +125,9 @@ app.get('/api/detail', async (req, res) => {
 
 app.get('/api/watch', async (req, res) => {
     try {
-        const { url } = req.query;
-        if (!url) return res.status(400).json({ error: 'URL episode tidak ditemukan' });
-
-        const { data } = await axios.get(url, { headers });
-        const $ = cheerio.load(data);
-        
-        let videoUrl = $('#pembed iframe').attr('src') || $('.responsive-embed-container iframe').attr('src') || $('iframe').first().attr('src');
-        
-        if (!videoUrl) throw new Error('Link video iframe tidak ditemukan.');
-
-        res.json({
-            title: $('.venser h1').text().trim() || 'Sedang Menonton',
-            videoUrl: videoUrl,
-        });
+        if (!req.query.url) throw new Error("URL episode dibutuhkan");
+        const data = await otaku.episode(req.query.url);
+        res.json(data);
     } catch (error) {
         res.status(500).json({ error: 'Gagal memuat Video: ' + error.message });
     }
