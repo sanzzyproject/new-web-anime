@@ -8,31 +8,40 @@ app.use(cors());
 
 const baseUrl = 'https://otakudesu.best';
 
-// Helper Anti-Blokir Vercel (Hanya bekerja jika Vercel diblokir 403)
+// Sistem Anti-Blokir: Multi-Proxy Otomatis (Anti Timeout)
 async function fetchWithBypass(targetUrl) {
+    // 1. Coba akses langsung (Cepat, tapi resiko diblokir Vercel)
     try {
         const { data } = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 10000
+            timeout: 8000 // Tunggu max 8 detik
         });
         return data;
     } catch (error) {
-        if (error.response && error.response.status === 403) {
-            // Jika kena 403, kita tembus pakai proxy AllOrigins
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-            const { data } = await axios.get(proxyUrl, { timeout: 10000 });
+        console.log("Akses langsung gagal, mencoba Proxy 1...");
+        
+        // 2. Jika gagal/diblokir (403), pakai Proxy 1 (CodeTabs - Biasanya cepat)
+        try {
+            const proxy1 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+            const { data } = await axios.get(proxy1, { timeout: 20000 }); // Tunggu max 20 detik
+            return data;
+        } catch (err1) {
+            console.log("Proxy 1 macet, mencoba Proxy 2...");
+            
+            // 3. Jika Proxy 1 lemot, ganti jalur ke Proxy 2 (AllOrigins)
+            const proxy2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+            const { data } = await axios.get(proxy2, { timeout: 20000 }); // Tunggu max 20 detik
             return data;
         }
-        throw error;
     }
 }
 
 // ==========================================================
-// CLASS OTAKUDESU ASLI MILIKMU (DENGAN TAMBAHAN BYPASS 403)
+// KODE CLASS SCRAPER ASLI MILIKMU (DENGAN FETCH CUSTOM)
 // ==========================================================
 class Otakudesu {
     async home() {
-        const data = await fetchWithBypass(baseUrl);
+        const data = await fetchWithBypass(`${baseUrl}/ongoing-anime/`); // Fokus Ongoing ke Home
         const $ = cheerio.load(data);
         const result = [];
         $('.venz ul li').each((i, el) => {
@@ -101,7 +110,7 @@ class Otakudesu {
 const otaku = new Otakudesu();
 
 // ==========================================================
-// ROUTING EXPRESS (Menghubungkan Frontend dengan Class milikmu)
+// ROUTING EXPRESS API
 // ==========================================================
 
 app.get('/api/home', async (req, res) => {
@@ -115,7 +124,7 @@ app.get('/api/home', async (req, res) => {
 
 app.get('/api/detail', async (req, res) => {
     try {
-        if (!req.query.url) throw new Error("URL dibutuhkan");
+        if (!req.query.url) throw new Error("URL anime dibutuhkan");
         const data = await otaku.detail(req.query.url);
         res.json(data);
     } catch (error) {
