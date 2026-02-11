@@ -7,9 +7,22 @@ const app = express();
 app.use(cors());
 
 const baseUrl = 'https://otakudesu.best';
-const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 
-// Fungsi aman untuk ekstrak teks (mencegah crash)
+// HEADERS SUPER LENGKAP UNTUK BYPASS CLOUDFLARE/403
+const headers = { 
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Referer': 'https://otakudesu.best/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'max-age=0'
+};
+
 const getSafeText = ($, element, keyword) => {
     const text = $(element).find(`p:contains("${keyword}")`).text();
     if (!text) return "N/A";
@@ -66,7 +79,6 @@ app.get('/api/detail', async (req, res) => {
         detail.episodes.reverse();
         res.json(detail);
     } catch (error) {
-        // Tangkap error jika Cloudflare memblokir Vercel atau format berubah
         res.status(500).json({ error: 'Gagal mengambil Detail: ' + error.message });
     }
 });
@@ -79,7 +91,6 @@ app.get('/api/watch', async (req, res) => {
         const { data } = await axios.get(url, { headers });
         const $ = cheerio.load(data);
         
-        // Cari iframe video secara lebih agresif
         let videoUrl = $('#pembed iframe').attr('src') || $('.responsive-embed-container iframe').attr('src') || $('iframe').first().attr('src');
         
         if (!videoUrl) throw new Error('Link video iframe tidak ditemukan.');
