@@ -1,10 +1,10 @@
 const app = document.getElementById('app-content');
 
-// Fungsi Routing sederhana
 async function goHome() {
     app.innerHTML = '<div class="loader"><i class="ph ph-spinner-gap ph-spin"></i> Memuat Rekomendasi...</div>';
     try {
         const res = await fetch('/api/home');
+        if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         
         let html = `<h2 class="section-title">✨ Baru Rilis & Trending</h2><div class="anime-grid">`;
@@ -26,7 +26,7 @@ async function goHome() {
         app.innerHTML = html;
         window.scrollTo(0, 0);
     } catch (err) {
-        app.innerHTML = `<div class="loader">Gagal memuat data.</div>`;
+        app.innerHTML = `<div class="loader" style="color: red;">Gagal memuat Home:<br><small>${err.message}</small></div>`;
     }
 }
 
@@ -35,6 +35,9 @@ async function goDetail(url) {
     try {
         const res = await fetch(`/api/detail?url=${encodeURIComponent(url)}`);
         const data = await res.json();
+        
+        // Tangkap pesan error dari backend
+        if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan tidak dikenal');
 
         let epHtml = '';
         data.episodes.forEach(ep => {
@@ -65,7 +68,9 @@ async function goDetail(url) {
         `;
         window.scrollTo(0, 0);
     } catch (err) {
-        app.innerHTML = `<div class="loader">Gagal memuat detail anime.</div>`;
+        // Tampilkan error secara detail di layar
+        app.innerHTML = `<div class="loader" style="color: #ff4757;">Gagal memuat detail:<br><small>${err.message}</small></div>
+        <button onclick="goHome()" style="display:block; margin: 20px auto; padding: 10px 20px; border-radius: 8px; border: none; background: var(--primary); color: white;">Kembali ke Home</button>`;
     }
 }
 
@@ -75,9 +80,11 @@ async function goWatch(episodeUrl, animeUrl) {
         const res = await fetch(`/api/watch?url=${encodeURIComponent(episodeUrl)}`);
         const data = await res.json();
 
+        if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan tidak dikenal');
+
         app.innerHTML = `
             <div class="player-container">
-                <iframe src="${data.videoUrl}" allowfullscreen="true" scrolling="no"></iframe>
+                <iframe src="${data.videoUrl}" allowfullscreen="true" scrolling="no" frameborder="0"></iframe>
             </div>
             <div class="watch-title">${data.title}</div>
             
@@ -89,9 +96,9 @@ async function goWatch(episodeUrl, animeUrl) {
         `;
         window.scrollTo(0, 0);
     } catch (err) {
-        app.innerHTML = `<div class="loader">Gagal memuat video.</div>`;
+        app.innerHTML = `<div class="loader" style="color: #ff4757;">Gagal memuat video:<br><small>${err.message}</small></div>
+        <button onclick="goDetail('${animeUrl}')" style="display:block; margin: 20px auto; padding: 10px 20px; border-radius: 8px; border: none; background: var(--primary); color: white;">Kembali</button>`;
     }
 }
 
-// Inisialisasi awal
 goHome();
