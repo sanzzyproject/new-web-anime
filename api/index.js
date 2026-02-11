@@ -9,7 +9,14 @@ app.use(cors());
 const baseUrl = 'https://otakudesu.best';
 const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 
-// Endpoint Home (Trending / Ongoing)
+// Fungsi aman untuk ekstrak teks (mencegah crash)
+const getSafeText = ($, element, keyword) => {
+    const text = $(element).find(`p:contains("${keyword}")`).text();
+    if (!text) return "N/A";
+    const parts = text.split(':');
+    return parts.length > 1 ? parts.slice(1).join(':').trim() : text.trim();
+};
+
 app.get('/api/home', async (req, res) => {
     try {
         const { data } = await axios.get(`${baseUrl}/ongoing-anime/`, { headers });
@@ -25,27 +32,26 @@ app.get('/api/home', async (req, res) => {
         });
         res.json(result);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Gagal mengambil data Home: ' + error.message });
     }
 });
 
-// Endpoint Detail Anime
 app.get('/api/detail', async (req, res) => {
     try {
         const { url } = req.query;
-        if (!url) return res.status(400).json({ error: 'URL is required' });
+        if (!url) return res.status(400).json({ error: 'URL anime tidak ditemukan' });
 
         const { data } = await axios.get(url, { headers });
         const $ = cheerio.load(data);
         const info = $('.infozin .infozingle');
         
         const detail = {
-            thumb: $('.fotoanime img').attr('src'),
-            title: info.find('p:contains("Judul")').text().split(':')[1]?.trim(),
-            score: info.find('p:contains("Skor")').text().split(':')[1]?.trim() || "N/A",
-            status: info.find('p:contains("Status")').text().split(':')[1]?.trim(),
-            genre: info.find('p:contains("Genre")').text().split(':')[1]?.trim(),
-            sinopsis: $('.sinopc').text().trim(),
+            thumb: $('.fotoanime img').attr('src') || '',
+            title: getSafeText($, info, "Judul"),
+            score: getSafeText($, info, "Skor"),
+            status: getSafeText($, info, "Status"),
+            genre: getSafeText($, info, "Genre"),
+            sinopsis: $('.sinopc').text().trim() || 'Sinopsis belum tersedia.',
             episodes: []
         };
 
@@ -57,32 +63,33 @@ app.get('/api/detail', async (req, res) => {
             });
         });
         
-        // Reverse agar episode 1 ada di atas (opsional)
         detail.episodes.reverse();
         res.json(detail);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        // Tangkap error jika Cloudflare memblokir Vercel atau format berubah
+        res.status(500).json({ error: 'Gagal mengambil Detail: ' + error.message });
     }
 });
 
-// Endpoint Watch (Ambil Iframe & Download)
 app.get('/api/watch', async (req, res) => {
     try {
         const { url } = req.query;
-        if (!url) return res.status(400).json({ error: 'URL is required' });
+        if (!url) return res.status(400).json({ error: 'URL episode tidak ditemukan' });
 
         const { data } = await axios.get(url, { headers });
         const $ = cheerio.load(data);
         
-        // Coba cari iframe dari script atau tag iframe langsung
-        let videoUrl = $('#pembed iframe').attr('src');
+        // Cari iframe video secara lebih agresif
+        let videoUrl = $('#pembed iframe').attr('src') || $('.responsive-embed-container iframe').attr('src') || $('iframe').first().attr('src');
         
+        if (!videoUrl) throw new Error('Link video iframe tidak ditemukan.');
+
         res.json({
-            title: $('.venser h1').text().trim(),
+            title: $('.venser h1').text().trim() || 'Sedang Menonton',
             videoUrl: videoUrl,
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Gagal memuat Video: ' + error.message });
     }
 });
 
